@@ -124,7 +124,7 @@ const driverLabels: Record<string, string> = {
   informix: "Informix",
   iotdb: "Apache IoTDB",
   iris: "InterSystems IRIS",
-  kingbase: "KingBase",
+  kingbase: "KingbaseES",
   kylin: "Apache Kylin",
   mongodb: "MongoDB (Legacy)",
   neo4j: "Neo4j",
