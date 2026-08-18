@@ -6,7 +6,11 @@ import { publicBasePathRedirectPlugin } from "./vitePublicBasePathRedirect";
 
 const host = process.env.TAURI_DEV_HOST;
 const isTauri = !!host || !!process.env.TAURI_ENV_ARCH;
-const configuredBasePath = process.env.VITE_DBX_BASE_PATH || process.env.DBX_PUBLIC_BASE_PATH;
+// Desktop bundles always serve from the bundle root; the public base path only
+// applies to web deployments. Keep Tauri builds immune to a globally set
+// DBX_PUBLIC_BASE_PATH (e.g. from a shell profile), which otherwise corrupts
+// asset URLs inside the packaged app.
+const configuredBasePath = isTauri ? undefined : process.env.VITE_DBX_BASE_PATH || process.env.DBX_PUBLIC_BASE_PATH;
 const manualChunks: Record<string, string[]> = {
   codemirror: ["codemirror", "@codemirror/lang-sql", "@codemirror/view", "@codemirror/state", "@codemirror/autocomplete", "@codemirror/commands", "@codemirror/theme-one-dark"],
   "vue-echarts": ["vue-echarts"],
