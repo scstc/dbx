@@ -34,7 +34,15 @@ public final class IgniteAgent extends AbstractJdbcAgent {
 
     @Override
     protected void afterConnect(ConnectParams params, Connection connection) {
-        databaseName = params.getDatabase();
+        // Ignite has no catalogs; name the virtual database after the connection's
+        // real default schema (e.g. PUBLIC) so any database-as-schema context that
+        // leaks into setSchema targets a schema that actually exists.
+        try {
+            String schema = connection.getSchema();
+            databaseName = schema == null || schema.isBlank() ? params.getDatabase() : schema;
+        } catch (Exception e) {
+            databaseName = params.getDatabase();
+        }
     }
 
     @Override
