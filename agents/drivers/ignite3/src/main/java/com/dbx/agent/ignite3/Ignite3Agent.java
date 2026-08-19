@@ -17,9 +17,13 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 
 public final class Ignite3Agent extends AbstractJdbcAgent {
+
+    private static final String JDBC_USERNAME_PROPERTY = "ignite.jdbc.username";
+    private static final String JDBC_PASSWORD_PROPERTY = "ignite.jdbc.password";
 
     private String databaseName = "";
 
@@ -31,6 +35,18 @@ public final class Ignite3Agent extends AbstractJdbcAgent {
     @Override
     protected String buildJdbcUrl(ConnectParams params) {
         return buildUrl(params);
+    }
+
+    @Override
+    protected Properties buildConnectionProperties(ConnectParams params) {
+        Properties properties = new Properties();
+        String username = params.getUsername();
+        String password = params.getPassword();
+        if ((username != null && !username.isEmpty()) || (password != null && !password.isEmpty())) {
+            properties.setProperty(JDBC_USERNAME_PROPERTY, username == null ? "" : username);
+            properties.setProperty(JDBC_PASSWORD_PROPERTY, password == null ? "" : password);
+        }
+        return properties;
     }
 
     @Override
