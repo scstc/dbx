@@ -6,6 +6,7 @@ import com.dbx.agent.ConnectParams;
 import com.dbx.agent.DatabaseInfo;
 import com.dbx.agent.ForeignKeyInfo;
 import com.dbx.agent.IndexInfo;
+import com.dbx.agent.JdbcAgentProfile;
 import com.dbx.agent.MultiSessionJsonRpcServer;
 import com.dbx.agent.TableInfo;
 import com.dbx.agent.TriggerInfo;
@@ -137,14 +138,17 @@ public final class Ignite3Agent extends AbstractJdbcAgent {
         return "";
     }
 
-    private static String buildUrl(ConnectParams params) {
+    static String buildUrl(ConnectParams params) {
         String connectionString = params.getConnection_string();
         if (connectionString != null && !connectionString.trim().isEmpty()) {
             return connectionString.trim();
         }
         String base = "jdbc:ignite:thin://" + params.getHost() + ":" + params.getPort();
         String database = params.getDatabase();
-        return database == null || database.isBlank() ? base : base + "/" + database;
+        String url = database == null || database.isBlank() ? base : base + "/" + database;
+        // Reuse the shared JDBC URL parameter mapping so advanced options
+        // (timeouts, SSL, authentication) configured in the UI reach the driver.
+        return JdbcAgentProfile.appendUrlParams(url, params.getUrl_params());
     }
 
     private static String normalizeTableType(String type) {
