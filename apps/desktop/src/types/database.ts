@@ -471,7 +471,7 @@ export interface ObjectStatistics {
   total_bytes?: number | null;
 }
 
-export type ObjectSourceKind = "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY";
+export type ObjectSourceKind = "VIEW" | "MATERIALIZED_VIEW" | "PROCEDURE" | "FUNCTION" | "TRIGGER" | "EVENT" | "SEQUENCE" | "SYNONYM" | "PACKAGE" | "PACKAGE_BODY" | "TYPE" | "TYPE_BODY";
 
 export interface ObjectSource {
   name: string;
@@ -912,6 +912,7 @@ export type TreeNodeType =
   | "group-indexes"
   | "group-fkeys"
   | "group-triggers"
+  | "group-events"
   | "group-constraints"
   | "group-table-partitions"
   | "group-table-subpartitions"
@@ -946,6 +947,7 @@ export type TreeNodeType =
   | "index"
   | "fkey"
   | "trigger"
+  | "event"
   | "constraint"
   | "partition"
   | "subpartition"
@@ -1284,6 +1286,15 @@ export interface QueryTab {
       alias?: string;
     }[];
     columns: {
+      sourceName?: string;
+      sourceNameQuoted?: boolean;
+      sourceQualifier?: string;
+      sourceKey?: string;
+      star?: boolean;
+      resultName: string;
+      expression: string;
+    }[];
+    groupByColumns?: {
       sourceName?: string;
       sourceNameQuoted?: boolean;
       sourceQualifier?: string;

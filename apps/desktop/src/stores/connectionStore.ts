@@ -51,14 +51,17 @@ import {
   deleteGroups as deleteGroupsOp,
   connectionIdsInGroups as connectionIdsInGroupsOp,
   toggleGroupCollapsed as toggleGroupCollapsedOp,
+  expandGroups as expandGroupsOp,
   collapseAllGroups as collapseAllGroupsOp,
   moveConnectionToGroup as moveConnectionToGroupOp,
   remapSidebarLayoutConnectionIds,
   mergeSidebarLayout,
   reorderEntry as reorderEntryOp,
+  reorderEntries as reorderEntriesOp,
   buildConnectionGroupPathMap,
   connectionSidebarSearchAliases,
   type DropPosition,
+  type ReorderEntriesOptions,
 } from "@/lib/sidebar/sidebarLayout";
 import type { SqlCompletionColumn, SqlCompletionForeignKey, SqlCompletionObject, SqlCompletionTable } from "@/lib/sql/sqlCompletion";
 import { mergeSqlObjectNavigationType, sqlObjectNavigationTypeFromTableType } from "@/lib/sql/sqlNavigation";
@@ -130,7 +133,9 @@ import { createMetadataLoadTrace, logMetadataLoadTrace, MetadataLoadCoordinator,
 import type { MetadataScopeInput } from "@/lib/metadata/metadataLoadScope";
 import { MetadataResultCache, type MetadataCacheInvalidation } from "@/lib/metadata/metadataResultCache";
 import { invalidateTableMetadataCache } from "@/lib/metadata/tableMetadataCache";
-import { invalidateObjectDdlCache } from "@/lib/metadata/objectDdlCache";
+import { cancelObjectDdlLoadsForConnection, cancelObjectDdlLoadsForDatabase, invalidateObjectDdlCache } from "@/lib/metadata/objectDdlCache";
+import { cancelObjectMetadataLoadsForConnection, cancelObjectMetadataLoadsForDatabase } from "@/lib/metadata/objectMetadataCache";
+import { clearMetadataRuntimeCacheForConnection, clearMetadataRuntimeCacheForDatabase } from "@/lib/metadata/metadataRuntimeCache";
 import { invalidateObjectBrowserRowsCache } from "@/lib/table/objectBrowserRowsCache";
 import { MetadataTaskLimiter } from "@/lib/metadata/metadataTaskLimiter";
 import { buildCustomTypeTreeChildren } from "@/lib/sidebar/customTypeTree";
@@ -1299,7 +1304,7 @@ export const useConnectionStore = defineStore("connection", () => {
   // recurse into raw objects, its `meta` too), mirroring the markRaw() treatment
   // queryStore already applies to result rows. Containers stay reactive so their
   // children / isExpanded / isLoading mutations still drive the UI.
-  const LEAF_TREE_NODE_TYPES = new Set<TreeNode["type"]>(["column", "index", "fkey", "trigger", "type-member"]);
+  const LEAF_TREE_NODE_TYPES = new Set<TreeNode["type"]>(["column", "index", "fkey", "trigger", "event", "type-member"]);
 
   function markRawLeafTreeNodes(nodes: TreeNode[]): TreeNode[] {
     for (const node of nodes) {
@@ -3323,6 +3328,8 @@ export const useConnectionStore = defineStore("connection", () => {
     clearConnectionHealthCheck(connectionId);
     if (activeConnectionId.value === connectionId) activeConnectionId.value = null;
     invalidateCompletionCache(connectionId);
+    cancelObjectDdlLoadsForConnection(connectionId);
+    cancelObjectMetadataLoadsForConnection(connectionId);
     await disconnectRequest;
     return true;
   }
@@ -3346,6 +3353,9 @@ export const useConnectionStore = defineStore("connection", () => {
       node.children = [];
     }
     clearConnectionRootMetadataLoad(connectionId);
+    cancelObjectDdlLoadsForConnection(connectionId);
+    cancelObjectMetadataLoadsForConnection(connectionId);
+    clearMetadataRuntimeCacheForConnection(connectionId);
     // Disconnecting only tears down the live session. Keep the schema snapshot so
     // reconnecting can render databases and table names before the remote refresh.
     clearLoadedChildrenCache(connectionId, { deletePersisted: false });
@@ -3388,7 +3398,10 @@ export const useConnectionStore = defineStore("connection", () => {
 
   async function closeDatabaseConnection(connectionId: string, database: string) {
     if (hasSqlServerActivityTraceForConnection(connectionId, database)) await disposeSqlServerActivityTracesForConnection(connectionId, database);
+    cancelObjectDdlLoadsForDatabase(connectionId, database);
+    cancelObjectMetadataLoadsForDatabase(connectionId, database);
     await api.closeDatabaseConnection(connectionId, database);
+    clearMetadataRuntimeCacheForDatabase(connectionId, database);
     const { useQueryStore } = await import("@/stores/queryStore");
     const queryStore = useQueryStore();
     switch (settingsStore.editorSettings.disconnectTabHandlingMode) {
@@ -3426,6 +3439,9 @@ export const useConnectionStore = defineStore("connection", () => {
         return;
       } catch {
         // Backend pool is dead — remove from connectedIds and reconnect
+        cancelObjectDdlLoadsForConnection(connectionId);
+        cancelObjectMetadataLoadsForConnection(connectionId);
+        clearMetadataRuntimeCacheForConnection(connectionId);
         connectedIds.value.delete(connectionId);
         clearPrimaryVisibleObjectNames(connectionId);
         clearConnectionHealthCheck(connectionId);
@@ -8023,8 +8039,14 @@ export const useConnectionStore = defineStore("connection", () => {
         const [pinnedOrder, saved] = await Promise.all([loadPinnedTreeNodeOrder(), api.loadConnections(), tunnelProfileStore.init()]);
         setPinnedTreeNodeOrder(pinnedOrder);
         await migrateTimeoutInheritance(saved);
-        connections.value = saved.map(normalizeConnection);
-        if (connections.value.some((connection, index) => (connection.connect_timeout_inherit === true && connection.connect_timeout_secs !== saved[index]?.connect_timeout_secs) || (connection.query_timeout_inherit === true && connection.query_timeout_secs !== saved[index]?.query_timeout_secs))) {
+        const loadedConnections = saved.map(normalizeConnection);
+        const loadedIds = new Set(loadedConnections.map((connection) => connection.id));
+        // One-time deep-link connections are intentionally filtered from disk
+        // persistence. Keep them in the live list when an unrelated disk reload
+        // (for example, the scheduled-backup poll) completes while they are open.
+        const runtimeOneTimeConnections = connections.value.filter((connection) => connection.one_time === true && !loadedIds.has(connection.id));
+        connections.value = [...loadedConnections, ...runtimeOneTimeConnections];
+        if (loadedConnections.some((connection, index) => (connection.connect_timeout_inherit === true && connection.connect_timeout_secs !== saved[index]?.connect_timeout_secs) || (connection.query_timeout_inherit === true && connection.query_timeout_secs !== saved[index]?.query_timeout_secs))) {
           await persistConnections();
         }
         syncTimeoutInheritanceBackup();
@@ -8262,6 +8284,9 @@ export const useConnectionStore = defineStore("connection", () => {
     toggleConnectionGroupCollapsed(groupId: string) {
       updateLayoutAndRebuild(toggleGroupCollapsedOp(sidebarLayout.value, groupId));
     },
+    expandConnectionGroups(groupIds: Iterable<string>) {
+      updateLayoutAndRebuild(expandGroupsOp(sidebarLayout.value, groupIds));
+    },
     moveConnectionToGroup(connectionId: string, groupId: string | null) {
       updateLayoutAndRebuild(moveConnectionToGroupOp(sidebarLayout.value, connectionId, groupId));
     },
@@ -8271,17 +8296,9 @@ export const useConnectionStore = defineStore("connection", () => {
     reorderSidebarEntry(draggedId: string, targetId: string, position: DropPosition) {
       updateLayoutAndRebuild(reorderEntryOp(sidebarLayout.value, draggedId, targetId, position));
     },
-    reorderSidebarEntries(draggedIds: string[], targetId: string, position: DropPosition) {
-      // Apply each dragged entry in turn so a multi-selection moves together,
-      // not just the single grabbed row (issue #681).
-      let layout = sidebarLayout.value;
-      let changed = false;
-      for (const id of draggedIds) {
-        if (id === targetId) continue;
-        layout = reorderEntryOp(layout, id, targetId, position);
-        changed = true;
-      }
-      if (changed) updateLayoutAndRebuild(layout);
+    reorderSidebarEntries(draggedIds: string[], targetId: string, position: DropPosition, options?: ReorderEntriesOptions) {
+      const layout = reorderEntriesOp(sidebarLayout.value, draggedIds, targetId, position, options);
+      if (layout !== sidebarLayout.value) updateLayoutAndRebuild(layout);
     },
   };
 });
