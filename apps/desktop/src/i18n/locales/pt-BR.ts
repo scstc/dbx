@@ -1013,6 +1013,7 @@ export default withEnglishFallback({
         mixed: "Maiúsculas e minúsculas",
       },
     },
+    igniteVersion: "Versão do Ignite",
     elasticsearchDirectMode: "Conexão Direta",
     elasticsearchKibanaProxyMode: "Proxy do Kibana",
     elasticsearchKibanaHost: "Host do Kibana",

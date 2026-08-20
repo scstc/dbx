@@ -1012,6 +1012,7 @@ export default withEnglishFallback({
         mixed: "混合大小寫",
       },
     },
+    igniteVersion: "Ignite 版本",
     elasticsearchDirectMode: "直接連線",
     elasticsearchKibanaProxyMode: "Kibana 代理",
     elasticsearchKibanaHost: "Kibana 主機",
