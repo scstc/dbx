@@ -2896,7 +2896,12 @@ function onDbTypeChange(val: string) {
 
 function selectIgniteConnectionProfile(profile: IgniteConnectionProfile) {
   if (form.value.db_type === profile) return;
-  onDbTypeChange(profile);
+  const category = dbCategoryForOption(profile);
+  if (category) selectedDbCategory.value = category;
+  customDriverName.value = "";
+  applyProfile(profile, true);
+  resetTestState();
+  resetVisibleSchemasState();
 }
 
 function switchH2ConnectionMode(mode: H2ConnectionMode) {
